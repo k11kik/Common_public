@@ -22,7 +22,6 @@ import time
 import logging
 
 from common.base import display, path
-from common import util
 
 
 def get(cdf_file_path, display_cdf=False):
@@ -71,7 +70,7 @@ def info(cdf_file_path):
     #     "variables": var_names,
     #     "shapes": shape_list,
     # }
-    util.print_dict(dict_var_names)
+    display.print_dict(dict_var_names)
 
     return dict_var_names
 
