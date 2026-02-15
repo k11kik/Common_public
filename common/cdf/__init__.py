@@ -1,7 +1,7 @@
 from . import (
     # cdf, # to be deleted
     cdfdata,
-    _to_pytplot
+    # _to_pytplot
 )
 
 from .cdfdata import (
