@@ -1,7 +1,7 @@
 from . import (
     # cdf, # to be deleted
     cdfdata,
-    # _to_pytplot
+    _to_pytplot
 )
 
 from .cdfdata import (
@@ -10,7 +10,7 @@ from .cdfdata import (
     # get_cdf_to_read,
     info,
     variable_list,
-    dict_to_cdf,
+    # dict_to_cdf,
     dict_to_cdffile,
     cdffile_to_dict,
     check_cdf_variables
