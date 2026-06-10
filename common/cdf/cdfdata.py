@@ -34,9 +34,6 @@ def get(cdf_file_path, display_cdf=False):
 
 
 def variable_list(cdf_file_path):
-    """
-    ファイルを即座に閉じるように修正
-    """
     with pycdf.CDF(cdf_file_path) as cdf_data:
         return list(cdf_data.keys())
 
@@ -52,9 +49,6 @@ def _variable_list(cdf_file_path):# 20260506
 
 
 def info(cdf_file_path):
-    """
-    情報の取得が終わったらファイルを閉じる
-    """
     print("----- cdf info -----")
     print(f"cdf file path: {cdf_file_path}")
     
@@ -660,12 +654,40 @@ def dict_to_cdffile(
         dict_data: dict,
         savecdf,
         dict_description = None,
-        dict_units = None
+        dict_units = None,
+        global_attrs=None,
 ):
+    """
+    dict -> cdf file
+
+    Parameters
+    ----------
+    dict_data : dict
+        書き出すデータの辞書。
+    savecdf : str
+        保存先のCDFファイルパス。
+    dict_description : dict, optional
+        変数ごとの説明（CATDESC）の辞書。
+    dict_units : dict, optional
+        変数ごとの単位（UNITS）の辞書。
+    global_attrs : dict or str, optional
+        ファイル全体の属性（グローバル属性）。
+        文字列が渡された場合は、自動的に標準的な {'TITLE': global_attrs} 構造に変換されます。
+    """
     path.make_directory(savecdf)
     if os.path.exists(savecdf):
         os.remove(savecdf)
     with pycdf.CDF(savecdf, '') as cdf:
+        if global_attrs is not None:
+            if isinstance(global_attrs, str):
+                # 単一の文字列が渡された場合、標準的なタイトルとして割り当てる
+                cdf.attrs['TITLE'] = global_attrs
+                cdf.attrs['TEXT'] = global_attrs
+            elif isinstance(global_attrs, dict):
+                # 辞書が渡された場合は、すべてのキー・値をグローバル属性としてそのまま追加
+                for attr_key, attr_val in global_attrs.items():
+                    cdf.attrs[attr_key] = attr_val
+
         for key, value in dict_data.items():
             try:
                 if not isinstance(value, (list, np.ndarray)):
@@ -686,9 +708,14 @@ def dict_to_cdffile(
 
 def cdffile_to_dict(cdf_filepath):
     """
-    効率化のため、関数内で一度だけファイルを開いて全データを取得する
+    cdf file -> dict
+
+    Not existing cdf_filepath => return None
     """
     dict_data = {}
+    if not os.path.exists(cdf_filepath):
+        display.warning(f'Not found: {cdf_filepath}')
+        return
     with pycdf.CDF(cdf_filepath) as cdf:
         var_names = list(cdf.keys())
         for var in var_names:
@@ -696,7 +723,7 @@ def cdffile_to_dict(cdf_filepath):
                 # 既に開いている cdf オブジェクトからデータを取得
                 dict_data[var] = cdf[var][...]
             except Exception as e:
-                print(f'Error in processing {var}: {e}')
+                display.error(f'Error in processing {var}: {e}')
     return dict_data
 
 
