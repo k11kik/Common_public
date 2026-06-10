@@ -1,13 +1,21 @@
+"""
+log level:
+* DEBUG: debug
+* INFO: information
+* WARNING: error in modules/functions
+* ERROR: error: error in main process such as try/except sequence
+"""
+
 from datetime import datetime, timedelta
 import inspect
 
 
 # ログレベルの整数値定義 (標準loggingモジュールに倣い、大きいほど重要)
 LOG_LEVELS = {
-    'DEBUG': 10,
-    'INFO': 20,
-    'WARNING': 30,
-    'ERROR': 40,
+    'DEBUG': 10, # debug
+    'INFO': 20, # information
+    'WARNING': 30, # warning: error in modules/functions
+    'ERROR': 40, # error: error in main process
     'CRITICAL': 50 # 現在は未使用だが将来的な拡張のために定義
 }
 
@@ -88,7 +96,7 @@ def current_time_comment(puces: str = None, comment: str = None):
 #     return
 
 
-def progress_bar(iteration, total, start_time, bar_length=40, color='white', update=True):
+def progress_bar(iteration, total, start_time, bar_length=40, color='white', update=True, level='INFO'):
     """
     Display a progress bar with percentage and time per iteration.
 
@@ -107,6 +115,33 @@ def progress_bar(iteration, total, start_time, bar_length=40, color='white', upd
     * 'time_per_iter'
     * 'eta'
     """
+    def format_timespan(seconds):
+        """秒数を日・時間・分・秒の読みやすい形式に変換する"""
+        if seconds < 60:
+            return f"{seconds:.2f}s"
+        
+        td = timedelta(seconds=int(seconds))
+        days = td.days
+        hours, remainder = divmod(td.seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+        if secs > 0 or not parts:
+            parts.append(f"{secs}s")
+        
+        return " ".join(parts)
+
+    target_level = level.upper()
+    level_value = LOG_LEVELS.get(target_level, 20)
+    if level_value < CURRENT_LOG_LEVEL_THRESHOLD:
+        return None
+
     # start from 1
     prog_iteration = iteration + 1
 
@@ -130,9 +165,16 @@ def progress_bar(iteration, total, start_time, bar_length=40, color='white', upd
         print(color_letters(f'\r[{bar}] {prog_iteration}/{total} ({percent:.2f}%) | Time/Iter: {avg_time_per_iter:.2f}s | ETA: {remain_time}', color=color), end='')
     else:
         print(color_letters(f'\r[{bar}] {prog_iteration}/{total} ({percent:.2f}%) | Time/Iter: {avg_time_per_iter:.2f}s | ETA: {remain_time}', color=color))
-    # Add newline when progress completes
-    if iteration == (total - 1):
-        print()
+    
+    # Add newline and Summary when progress completes
+    if prog_iteration >= total:
+        total_duration_str = format_timespan(elapsed_time)
+        finish_msg = f"\n  ✔︎ Total Elapsed Time: {total_duration_str} ({avg_time_per_iter:.4f} s/iter)"
+        print(finish_msg)
+    
+    # # Add newline when progress completes
+    # if iteration == (total - 1):
+    #     print()
     
     return {
         'percent': percent,
@@ -236,31 +278,58 @@ def error(comment: str, arg_debug=None):
 
 def print_list(
         list_data,
-        prefix='List info'
+        prefix='List',
+        level='INFO',
 ):
+    target_level = level.upper()
+    if LOG_LEVELS.get(target_level, 0) < CURRENT_LOG_LEVEL_THRESHOLD:
+        return
+
     if not isinstance(list_data, list):
         raise ValueError('list_data is not list type')
     
-    start_comment = f'----- {prefix} -----'
+    color = 'green' if target_level == 'DEBUG' else 'white' if target_level == 'INFO' else 'yellow'
+    
+    function_name = get_caller_name()
+    time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    start_comment = f'----- {color_letters(f'{target_level} {time_str}', color=color)} [{function_name}] {prefix} -----'
+    plain_text = f"{target_level} {time_str} [{function_name}] {prefix}"
+    content_len = len(plain_text) + 12
+    
     print(start_comment)
     for i, v in enumerate(list_data):
         print(f'{i} {v}')
-    end_comment = '-' * len(start_comment)
+    end_comment = '-' * content_len
     print(end_comment)
     return
 
 def print_dict(
         dict_data,
-        prefix='Dict info'
+        prefix='Dict',
+        level='INFO',
+        only_prefix=False,
 ):
+    target_level = level.upper()
+    if LOG_LEVELS.get(target_level, 0) < CURRENT_LOG_LEVEL_THRESHOLD:
+        return
+
     if not isinstance(dict_data, dict):
         raise ValueError('dict_data is not dict type')
     
-    start_comment = f'----- {prefix} -----'
+    color = 'green' if target_level == 'DEBUG' else 'white' if target_level == 'INFO' else 'yellow'
+    
+    function_name = get_caller_name()
+    time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if only_prefix:
+        start_comment = f'----- {prefix} -----'
+        plain_text = f'{prefix}'
+    else:
+        start_comment = f'----- {color_letters(f'{target_level} {time_str}', color=color)} [{function_name}] {prefix} -----'
+        plain_text = f"{target_level} {time_str} [{function_name}] {prefix}"
+    content_len = len(plain_text) + 12
     print(start_comment)
     for i, (key, value) in enumerate(dict_data.items()):
         print(f'{i} {key}: {value}')
-    end_comment = '-' * len(start_comment)
+    end_comment = '-' * content_len
     print(end_comment)
-    return
     return
