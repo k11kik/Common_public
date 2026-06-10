@@ -10,7 +10,7 @@ import os
 import matplotlib.pyplot as plt
 from datetime import datetime
 import pandas as pd
-import glob
+from glob import glob
 import shutil
 from .import display
 
@@ -95,7 +95,7 @@ def remove_file_if_exists(filename):
     return
 
 
-def savefig(save_filename, print_savepath=True, dpi=None, fig=None):
+def savefig(save_filename, print_savepath=True, dpi=None, fig=None, bbox_inches='tight', pad_inches=0.05):
     """
     画像を指定したパスと名前で保存する関数。
     :param save_filename: str, 保存するファイル名（フルパスを含む）
@@ -114,18 +114,21 @@ def savefig(save_filename, print_savepath=True, dpi=None, fig=None):
     # ディレクトリが存在するか確認し、なければ作成
     # if ensure_dir:
     #     ensure_directory_exists(directory)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        print(f"Directory created: {directory}")
+    if directory == '':
+        pass
+    else:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            print(f"Directory created: {directory}")
 
     # 現在のプロットを保存
     if fig is None:
-        plt.savefig(save_filename, dpi=dpi)
+        plt.savefig(save_filename, dpi=dpi, bbox_inches=bbox_inches, pad_inches=pad_inches)
     else:
-        fig.savefig(save_filename, dpi=dpi)
+        fig.savefig(save_filename, dpi=dpi, bbox_inches=bbox_inches, pad_inches=pad_inches)
 
-    if print_savepath:
-        print(f"# {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} saved image: {save_filename}")
+    display.info(f'Saved image: {save_filename}')
+
     if fig is None:
         plt.close()
     else:
@@ -182,8 +185,9 @@ def savecsv(
 
     # save dataframe as a csv file
     dataframe.to_csv(save_filename, sep=sep, index=index)
-    if print_savepath:
-        print(f"# {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} saved csv: {save_filename}")
+    display.info(f'Saved csv: {save_filename}')
+    # if print_savepath:
+    #     print(f"# {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} saved csv: {save_filename}")
     return
 
 
@@ -220,7 +224,7 @@ def copy_data_by_datetime(
 
         filename_candidate = f'{base_dir_ql}/*{year:04}{month:02}{day:02}{hour:02}{minute_ql:02}*{extension}'
         display.debug(f'{filename_candidate=}')
-        list_file_to_be_copied = glob.glob(filename_candidate)
+        list_file_to_be_copied = glob(filename_candidate)
 
         for f in list_file_to_be_copied:
             for char in characters:
@@ -275,7 +279,7 @@ def copy_file(
 def glob_one(
         filepath_search
 ):
-    list_filepath_candidate = glob.glob(filepath_search)
+    list_filepath_candidate = glob(filepath_search)
     if len(list_filepath_candidate) == 0:
         display.warning(f'Not found: {filepath_search}')
         return
@@ -287,3 +291,15 @@ def glob_one(
         display.info(f'Multiple files found -> Return 1st one')
         display.print_list(list_filepath_candidate, prefix='list_filepath_candidate')
         return list_filepath_candidate[0]
+    
+
+def get_filename(
+        filepath,
+        without_ext=True
+):
+    if without_ext:
+        filename = os.path.splitext(os.path.basename(filepath))[0]
+    else:
+        filename = os.path.basename(filepath)
+    return filename
+
