@@ -17,4 +17,5 @@ def init():
     plt.rcParams['font.family'] = 'Roboto Condensed'
     plt.rcParams['font.size'] = 18
     plt.rcParams['legend.fontsize'] = 18
+    plt.rcParams['xtick.labelsize'] = 18
     return
