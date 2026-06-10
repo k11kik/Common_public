@@ -865,9 +865,16 @@ def get_xticks_datetime_with_orbit(
         dat_orbit,
         delta: int = 15,
         timeunit: str = 'minutes',
-        deltay_ticks = 0.2,
         xlim: list | None = None
 ):
+    """
+    軌道情報付きプロットのために、指定された時間単位に基づき目盛りと多行ラベルを構築します。
+    'years' や 'months' などの長期的なスケールも含めた時間単位に対応しています。
+    """
+    valid_timeunits = ['years', 'months', 'days', 'hours', 'minutes', 'seconds']
+    if timeunit not in valid_timeunits:
+        raise ValueError(f"timeunit must be one of {valid_timeunits}, got '{timeunit}'")
+
     unit_to_seconds = {
         'days': 86400,
         'hours': 3600,
@@ -875,87 +882,217 @@ def get_xticks_datetime_with_orbit(
         'seconds': 1
     }
 
-    if timeunit not in unit_to_seconds:
-        raise ValueError(f"timeunit must be one of {list(unit_to_seconds.keys())}, got '{timeunit}'")
-
-    interval_sec = delta * unit_to_seconds[timeunit]
-
+    # 1. 範囲の決定
     if xlim is not None:
         t0 = datetime.strptime(xlim[0], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
         t1 = datetime.strptime(xlim[1], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
+        ax.set_xlim(t0, t1)
+    else:
+        t0 = times[0]
+        t1 = times[-1]
+
+    # 2. xticks (Unixタイム) の生成
+    if timeunit == 'years' or timeunit == 'months':
+        t0_dt = datetime.fromtimestamp(t0, tz=timezone.utc)
+        t1_dt = datetime.fromtimestamp(t1, tz=timezone.utc)
+        
+        if timeunit == 'years':
+            start_dt = t0_dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            step = relativedelta(years=delta)
+        else: # months
+            start_dt = t0_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            step = relativedelta(months=delta)
+            
+        xticks_dt = []
+        current = start_dt
+        while current <= t1_dt:
+            if current.timestamp() >= t0:
+                xticks_dt.append(current)
+            current += step
+        xticks = np.array([dt.timestamp() for dt in xticks_dt])
+    else:
+        interval_sec = delta * unit_to_seconds[timeunit]
         start = int(np.ceil(t0 / interval_sec) * interval_sec)
         end = int(np.floor(t1 / interval_sec) * interval_sec)
+        
+        xticks = np.arange(start, end + 1, interval_sec)
+        if len(xticks) == 0:
+            xticks = np.array([start])
 
-    else:
-        # Round start and end to the nearest interval
-        start = int(np.floor(times[0] / interval_sec) * interval_sec)
-        end = int(np.ceil(times[-1] / interval_sec) * interval_sec)
-
-    # Set ticks
-    xticks = np.arange(start, end + 1, interval_sec)
-    if len(xticks) == 0:
-        xticks = np.array([start])
+    # ティックのセット
     ax.set_xticks(xticks)
 
-    # Format for display
-    if timeunit == 'days':
+    # 3. 表示形式の決定
+    if timeunit == 'years':
+        fmt = '%Y'
+    elif timeunit == 'months':
+        fmt = '%m'
+    elif timeunit in ['days', 'hours', 'minutes']:
         fmt = '%H:%M'
-    elif timeunit == 'hours':
-        fmt = '%H:%M'
-    elif timeunit == 'minutes':
-        fmt = '%H:%M'
-    else:  # seconds
+    else: # seconds
         fmt = '%H:%M:%S'
 
-    # 衛星軌道データから、各xtickに対応するインデックス取得
     times_orb = dat_orbit.times
-    rmlatmlt = dat_orbit.y  # shape = (N, 3)
+    rmlatmlt = dat_orbit.y  # shape: (N, 3) または (N,) の軌道情報配列
 
     xtick_labels = []
+    prev_dt = None
 
     if rmlatmlt.ndim == 1:
         for xtick in xticks:
             label = ''
-            idx = np.argmin(np.abs(times_orb - xtick))  # 最も近い時刻のインデックス
+            idx = np.argmin(np.abs(times_orb - xtick))  
             data_orbit = rmlatmlt[idx]
             str_orbit = f"{data_orbit:.2f}"
             label += f"{str_orbit}\n"
-            time_str = datetime.fromtimestamp(xtick, tz=timezone.utc).strftime(fmt)
+            
+            dt = datetime.fromtimestamp(xtick, tz=timezone.utc)
+            if timeunit == 'months':
+                if prev_dt is None or dt.year != prev_dt.year:
+                    time_str = f"{dt.strftime('%m')}\n{dt.year}"
+                else:
+                    time_str = dt.strftime('%m')
+            elif timeunit == 'years':
+                time_str = dt.strftime('%Y')
+            else:
+                time_str = dt.strftime(fmt)
+                
             label += f"{time_str}"
             xtick_labels.append(label)
+            prev_dt = dt
     
     elif rmlatmlt.ndim == 2:
         for xtick in xticks:
             label = ''
-            idx = np.argmin(np.abs(times_orb - xtick))  # 最も近い時刻のインデックス
+            idx = np.argmin(np.abs(times_orb - xtick))  
             for i in range(rmlatmlt.shape[1]):
                 data_orbit = rmlatmlt[idx, i]
                 str_orbit = f"{data_orbit:.2f}"
                 label += f"{str_orbit}\n"
-            time_str = datetime.fromtimestamp(xtick, tz=timezone.utc).strftime(fmt)
+            
+            dt = datetime.fromtimestamp(xtick, tz=timezone.utc)
+            if timeunit == 'months':
+                if prev_dt is None or dt.year != prev_dt.year:
+                    time_str = f"{dt.strftime('%m')}\n{dt.year}"
+                else:
+                    time_str = dt.strftime('%m')
+            elif timeunit == 'years':
+                time_str = dt.strftime('%Y')
+            else:
+                time_str = dt.strftime(fmt)
+                
             label += f"{time_str}"
             xtick_labels.append(label)
-
+            prev_dt = dt
     else:
-        raise ValueError('Unsupposed type rmlatmlt')
-        
-        # r, mlat, mlt = rmlatmlt[idx]
+        raise ValueError('Unsupported rmlatmlt ndim')
 
-        # # フォーマット
-        # r_str = f"{r:.2f}"
-        # mlat_str = f"{mlat:.2f}"
-        # mlt_str = f"{mlt:.2f}"
-        # time_str = datetime.fromtimestamp(xtick, tz=timezone.utc).strftime(fmt)
-
-        # label = f"{r_str}\n{mlat_str}\n{mlt_str}\n{time_str}"
-        # xtick_labels.append(label)
-
-    # 最後だけ日付も足す
-
-    date_str = datetime.fromtimestamp(times[-1], tz=timezone.utc).strftime('%Y-%m-%d')
-    xtick_labels[-1] += f"\n{date_str}"
+    # 最後だけ日付を足す (years, months 以外かつ末尾行に \n がない場合)
+    if timeunit not in ['years', 'months']:
+        date_str = datetime.fromtimestamp(t1, tz=timezone.utc).strftime('%Y-%m-%d')
+        if len(xtick_labels) > 0 and '\n' not in xtick_labels[-1].split('\n')[-1]:
+            xtick_labels[-1] += f"\n{date_str}"
 
     return xtick_labels
+
+
+# def get_xticks_datetime_with_orbit(# 20260610
+#         ax,
+#         times,
+#         dat_orbit,
+#         delta: int = 15,
+#         timeunit: str = 'minutes',
+#         deltay_ticks = 0.2,
+#         xlim: list | None = None
+# ):
+#     unit_to_seconds = {
+#         'days': 86400,
+#         'hours': 3600,
+#         'minutes': 60,
+#         'seconds': 1
+#     }
+
+#     if timeunit not in unit_to_seconds:
+#         raise ValueError(f"timeunit must be one of {list(unit_to_seconds.keys())}, got '{timeunit}'")
+
+#     interval_sec = delta * unit_to_seconds[timeunit]
+
+#     if xlim is not None:
+#         t0 = datetime.strptime(xlim[0], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
+#         t1 = datetime.strptime(xlim[1], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
+#         start = int(np.ceil(t0 / interval_sec) * interval_sec)
+#         end = int(np.floor(t1 / interval_sec) * interval_sec)
+
+#     else:
+#         # Round start and end to the nearest interval
+#         start = int(np.floor(times[0] / interval_sec) * interval_sec)
+#         end = int(np.ceil(times[-1] / interval_sec) * interval_sec)
+
+#     # Set ticks
+#     xticks = np.arange(start, end + 1, interval_sec)
+#     if len(xticks) == 0:
+#         xticks = np.array([start])
+#     ax.set_xticks(xticks)
+
+#     # Format for display
+#     if timeunit == 'days':
+#         fmt = '%H:%M'
+#     elif timeunit == 'hours':
+#         fmt = '%H:%M'
+#     elif timeunit == 'minutes':
+#         fmt = '%H:%M'
+#     else:  # seconds
+#         fmt = '%H:%M:%S'
+
+#     # 衛星軌道データから、各xtickに対応するインデックス取得
+#     times_orb = dat_orbit.times
+#     rmlatmlt = dat_orbit.y  # shape = (N, 3)
+
+#     xtick_labels = []
+
+#     if rmlatmlt.ndim == 1:
+#         for xtick in xticks:
+#             label = ''
+#             idx = np.argmin(np.abs(times_orb - xtick))  # 最も近い時刻のインデックス
+#             data_orbit = rmlatmlt[idx]
+#             str_orbit = f"{data_orbit:.2f}"
+#             label += f"{str_orbit}\n"
+#             time_str = datetime.fromtimestamp(xtick, tz=timezone.utc).strftime(fmt)
+#             label += f"{time_str}"
+#             xtick_labels.append(label)
+    
+#     elif rmlatmlt.ndim == 2:
+#         for xtick in xticks:
+#             label = ''
+#             idx = np.argmin(np.abs(times_orb - xtick))  # 最も近い時刻のインデックス
+#             for i in range(rmlatmlt.shape[1]):
+#                 data_orbit = rmlatmlt[idx, i]
+#                 str_orbit = f"{data_orbit:.2f}"
+#                 label += f"{str_orbit}\n"
+#             time_str = datetime.fromtimestamp(xtick, tz=timezone.utc).strftime(fmt)
+#             label += f"{time_str}"
+#             xtick_labels.append(label)
+
+#     else:
+#         raise ValueError('Unsupposed type rmlatmlt')
+        
+#         # r, mlat, mlt = rmlatmlt[idx]
+
+#         # # フォーマット
+#         # r_str = f"{r:.2f}"
+#         # mlat_str = f"{mlat:.2f}"
+#         # mlt_str = f"{mlt:.2f}"
+#         # time_str = datetime.fromtimestamp(xtick, tz=timezone.utc).strftime(fmt)
+
+#         # label = f"{r_str}\n{mlat_str}\n{mlt_str}\n{time_str}"
+#         # xtick_labels.append(label)
+
+#     # 最後だけ日付も足す
+
+#     date_str = datetime.fromtimestamp(times[-1], tz=timezone.utc).strftime('%Y-%m-%d')
+#     xtick_labels[-1] += f"\n{date_str}"
+
+#     return xtick_labels
 
 
 # def label_orbit(
@@ -1305,23 +1442,23 @@ def add_panel_label(ax, index, panel_label_format='({char})', x_loc=0.01, y_loc=
     )
 
 
-def calculate_top_margin(title_str, base_margin=0.97, per_line_offset=0.03):
-    """
-    タイトル文字列内の改行数に基づいて、subplots_adjust用のtop値を計算します。
+# def calculate_top_margin(title_str, base_margin=0.97, per_line_offset=0.03):
+#     """
+#     タイトル文字列内の改行数に基づいて、subplots_adjust用のtop値を計算します。
     
-    Args:
-        title_str (str): fig.suptitle に渡す文字列。
-        base_margin (float): タイトルがない、あるいは1行の時のプロット上端の基準値。
-        per_line_offset (float): 改行1つにつきプロット領域をどれだけ押し下げるか。
+#     Args:
+#         title_str (str): fig.suptitle に渡す文字列。
+#         base_margin (float): タイトルがない、あるいは1行の時のプロット上端の基準値。
+#         per_line_offset (float): 改行1つにつきプロット領域をどれだけ押し下げるか。
         
-    Returns:
-        float: subplots_adjust(top=...) に渡す値。
-    """
-    if not title_str:
-        return 1.0
-    line_count = title_str.count('\n') + 1
-    top_value = base_margin - (line_count * per_line_offset)
-    return max(0.80, top_value)
+#     Returns:
+#         float: subplots_adjust(top=...) に渡す値。
+#     """
+#     if not title_str:
+#         return 1.0
+#     line_count = title_str.count('\n') + 1
+#     top_value = base_margin - (line_count * per_line_offset)
+#     return max(0.80, top_value)
 
     # ----- 20260519 ------
     # if not title_str:
@@ -1337,6 +1474,63 @@ def calculate_top_margin(title_str, base_margin=0.97, per_line_offset=0.03):
     # # 下限を設定（プロットが潰れすぎないように）
     # return max(0.7, top_value)
     # ----- 20260519 ------
+
+
+def calculate_top_margin(title_str, fig_height=12.0, fontsize=11.0, title_padding_top=0.12, title_padding_bottom=0.04):
+    """
+    suptitle の改行数、フォントサイズ、および Figure の高さ（インチ）に基づいて、
+    subplots_adjust(top=...) に設定すべき最適な位置（割合）を算出します。
+    余分なバッファを一切削り落とし、タイトルと第1プロットの隙間（空白）を物理長さで最小化します。
+    """
+    if not title_str:
+        return 0.95
+    
+    num_lines = title_str.count('\n') + 1
+    
+    # 1pt = 1/72インチ。標準的な行間係数1.15倍として文字自体の物理高さを算出します。
+    line_height_inch = (fontsize * 1.15) / 72.0
+    total_text_height_inch = num_lines * line_height_inch
+    
+    # 必要とする全体のタイトルスペース (inch)
+    # title_padding_bottom を 0.04 インチ（約3pt）まで絞ることで、隙間を極限まで最小化
+    total_title_space_inch = title_padding_top + total_text_height_inch + title_padding_bottom
+    
+    # 高さに対する割合 (0.0 - 1.0) に変換
+    top_value = 1.0 - (total_title_space_inch / fig_height)
+    
+    # 最悪のケースでもプロットがつぶれないよう最低リミットを設定
+    return max(0.40, top_value)
+
+
+def get_fontsize_points(size_val):
+    """
+    rcParams のフォントサイズ指定（ポイント数値または 'large' などの相対値文字列）を
+    実際のポイント数（float）に高精度に変換します。
+    """
+    base_size = plt.rcParams.get('font.size', 10.0)
+    if size_val is None:
+        return base_size
+    if isinstance(size_val, (int, float)):
+        return float(size_val)
+    if isinstance(size_val, str):
+        scalings = {
+            'xx-small': 0.579,
+            'x-small': 0.694,
+            'small': 0.833,
+            'medium': 1.0,
+            'large': 1.2,
+            'x-large': 1.44,
+            'xx-large': 1.728,
+            'smaller': 0.833,
+            'larger': 1.2
+        }
+        if size_val in scalings:
+            return base_size * scalings[size_val]
+        try:
+            return float(size_val)
+        except ValueError:
+            pass
+    return base_size
 
 
 def tplot_without_orbit_gs(
@@ -1363,28 +1557,43 @@ def tplot_without_orbit_gs(
         figsize = (12, max(4.0, nrow * 2.0))
     
     fig = plt.figure(figsize=figsize)
+    fig_height = figsize[1]
 
     dynamic_top = top
+    title_y_pos = 0.98
+    
+    # rcParams から自動的にフォントサイズを解決
+    size_val = plt.rcParams.get('figure.titlesize', 'large')
+    fontsize_title = get_fontsize_points(size_val)
+    
+    padding_top = 0.15     # 上部外枠からタイトル最上行までの隙間 (inch)
+    padding_bottom = 0.04  # タイトル最下行から1st plot上端までの隙間 (inch)
+
     if suptitle is not None:
-        num_lines = suptitle.count('\n') + 1
-        dynamic_top = 0.94 - (num_lines - 1) * 0.025
-        # dynamic_top -= (num_lines - 1) * top_adjustment_factor
-        dynamic_top = max(0.6, dynamic_top)
-        # fig.suptitle(suptitle, va='top', ha='center', y=0.98)
+        # 改正された calculate_top_margin で極小化した dynamic_top の比率を正確に算出
+        dynamic_top = calculate_top_margin(
+            suptitle, 
+            fig_height=fig_height, 
+            fontsize=fontsize_title, 
+            title_padding_top=padding_top, 
+            title_padding_bottom=padding_bottom
+        )
+        # タイトル文字列を描画する Y 座標（上揃え）も、上部マージンのみから決定
+        title_y_pos = 1.0 - (padding_top / fig_height)
 
     fig.subplots_adjust(
         top=dynamic_top, 
         bottom=0.18,      # 複数行の軌道情報をしっかり収めるための下部安全余白
-        left=0.1,        # 左軸テキスト用の余白
+        left=0.1,         # 左軸テキスト用の余白
         right=0.88,       # カラーバー用の余白
         hspace=hspace, 
         wspace=wspace
     )
 
     if suptitle is not None:
-        # suptitleの y 座標を、計算された dynamic_top の直上に自動連動
-        title_y_pos = min(0.98, dynamic_top + 0.025 + (suptitle.count('\n') * 0.01))
-        fig.suptitle(suptitle, va='bottom', ha='center', y=title_y_pos)
+        # 上揃え (va='top') にして、算出された title_y_pos 座標から下に文字を走らせます。
+        # 1st plot 上端（dynamic_top）の直上へと文字最下行が極限まで密着します。
+        fig.suptitle(suptitle, va='top', ha='center', y=title_y_pos, fontsize=fontsize_title)
 
 
 
@@ -1601,27 +1810,68 @@ def tplot_with_orbit_gs(
 
     fig = plt.figure(figsize=figsize)
 
+    fig_height = figsize[1]
+
     dynamic_top = top
+    title_y_pos = 0.98
+    
+    # rcParams から自動的にフォントサイズを解決
+    size_val = plt.rcParams.get('figure.titlesize', 'large')
+    fontsize_title = get_fontsize_points(size_val)
+    
+    padding_top = 0.15     # 上部外枠からタイトル最上行までの隙間 (inch)
+    padding_bottom = 0.04  # タイトル最下行から1st plot上端までの隙間 (inch) - これを詰めて空白を最小化します
+
     if suptitle is not None:
-        num_lines = suptitle.count('\n') + 1
-        dynamic_top = 0.94 - (num_lines - 1) * 0.025
-        # dynamic_top -= (num_lines - 1) * top_adjustment_factor
-        dynamic_top = max(0.6, dynamic_top)
-        # fig.suptitle(suptitle, va='top', ha='center', y=0.98)
+        # 改正された calculate_top_margin で極小化した dynamic_top の比率を正確に算出
+        dynamic_top = calculate_top_margin(
+            suptitle, 
+            fig_height=fig_height, 
+            fontsize=fontsize_title, 
+            title_padding_top=padding_top, 
+            title_padding_bottom=padding_bottom
+        )
+        # タイトル文字列を描画する Y 座標（上揃え）も、上部マージンのみから決定
+        title_y_pos = 1.0 - (padding_top / fig_height)
 
     fig.subplots_adjust(
         top=dynamic_top, 
         bottom=0.18,      # 複数行の軌道情報をしっかり収めるための下部安全余白
-        left=0.1,        # 左軸テキスト用の余白
+        left=0.1,         # 左軸テキスト用の余白
         right=0.88,       # カラーバー用の余白
         hspace=hspace, 
         wspace=wspace
     )
 
     if suptitle is not None:
-        # suptitleの y 座標を、計算された dynamic_top の直上に自動連動
-        title_y_pos = min(0.98, dynamic_top + 0.025 + (suptitle.count('\n') * 0.01))
-        fig.suptitle(suptitle, va='bottom', ha='center', y=title_y_pos)
+        # 上揃え (va='top') にして、算出された title_y_pos 座標から下に文字を走らせます。
+        # 1st plot 上端（dynamic_top）の直上へと文字最下行が極限まで密着します。
+        fig.suptitle(suptitle, va='top', ha='center', y=title_y_pos, fontsize=fontsize_title)
+
+    # ----- 20260610 -----
+    # dynamic_top = top
+    # if suptitle is not None:
+    #     num_lines = suptitle.count('\n') + 1
+    #     dynamic_top = 0.94 - (num_lines - 1) * 0.025
+    #     # dynamic_top -= (num_lines - 1) * top_adjustment_factor
+    #     dynamic_top = max(0.6, dynamic_top)
+    #     # fig.suptitle(suptitle, va='top', ha='center', y=0.98)
+
+    # fig.subplots_adjust(
+    #     top=dynamic_top, 
+    #     bottom=0.18,      # 複数行の軌道情報をしっかり収めるための下部安全余白
+    #     left=0.1,        # 左軸テキスト用の余白
+    #     right=0.88,       # カラーバー用の余白
+    #     hspace=hspace, 
+    #     wspace=wspace
+    # )
+
+    # if suptitle is not None:
+    #     # suptitleの y 座標を、計算された dynamic_top の直上に自動連動
+    #     title_y_pos = min(0.98, dynamic_top + 0.025 + (suptitle.count('\n') * 0.01))
+    #     fig.suptitle(suptitle, va='bottom', ha='center', y=title_y_pos)
+    # ----- 20260610 -----
+
 
 
     # ----- 20260519 -----
@@ -1935,7 +2185,7 @@ def tplot(
         height_ratios: list | None = None,
         ax_options: dict | None = None,
         str_label_orbit: str | None = None,
-        x_str_label_orbit = 0.9,
+        x_str_label_orbit = 0.8,
         top_adjustment_factor = 0.03,
         align_right_ymdstr: bool=True,
         panel_label=True
@@ -1945,7 +2195,7 @@ def tplot(
     -------
     * timeunit_xticks: 'seconds', 'minutes', 'hours', 'months', 'years'
     * list_label_orbit: ["R [Re]", "MLAT [deg]", "MLT [hr]", "TIME [HH:MM]"]
-
+    * x_str_label_orbit = 0.8: horizontal position of x-axis labels
     """
     # Default setting
     # ----------------------------------------
@@ -2009,7 +2259,6 @@ def tplot(
         )
 
     else:
-        
         tplot_with_orbit_gs(
             vars_plot,
             var_orbit,
