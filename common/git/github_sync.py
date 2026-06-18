@@ -80,9 +80,9 @@ def _download_github_file_api(
 def download(
     owner: str,
     repo: str,
-    branch: str,
     remote_path: str,
     github_token: str,
+    branch: str = 'main',
     is_dir: bool = None,
     local_base_dir: str = '.',
     confirm: bool = True,
@@ -274,9 +274,9 @@ def upload_github_file(
 def upload(
     owner: str,
     repo: str,
-    branch: str,
     local_path: str,
     github_token: str,
+    branch: str = 'main',
     extensions: list[str] | None = None,
     remote_path: str = None,
     is_dir: bool = None,
@@ -416,4 +416,10 @@ def upload(
     #     print("Upload complete.")
 
     display.info(f'Upload complete: {success_count}/{total}')
+
+    return_message = (
+        f'{owner} (Branch: {branch}): {local_path} -> {repo}\n'
+        f'  Uploaded: {success_count}/{total}'
+    )
+    return return_message
 
