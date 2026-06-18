@@ -1,7 +1,7 @@
 import numpy as np
 from common import display, pytplot
 from ._to_mfa import convert_to_mfa, convert_to_mfa_fluct
-from .gsm2rmlatmlt import _gsm2rmlatmlt, _rmlatmlt2gsm
+from .sm2rmlatmlt import _sm2rmlatmlt, _rmlatmlt2sm
 from ._to_mbe import convert_to_mbe
 
 
@@ -14,8 +14,13 @@ def to_mfa(
         info: bool = True,
         varname_out: str | None = None
 ):
-    if info:
-        display.current_time_comment(comment='Converting to MFA...')
+    """
+    Parameters
+    -----------
+    * res: window second [s] for coverting into MFA
+
+    """
+    display.info('Converting to MFA...')
     
     dat_mag = pytplot.get_data(varname_mag)
     dat_orb = pytplot.get_data(varname_orb)
@@ -44,7 +49,8 @@ def to_mfa(
             dat_mag.y,
             dat_orb.times,
             dat_orb.y,
-            window_size_mfa=window_size
+            window_size_mfa=window_size,
+            window_mfa_sec=res
         )
     
     else:
@@ -70,12 +76,15 @@ def to_mfa(
     if varname_out is None:
         varname_out = f'{varname_mag}_mfa'
     pytplot.store_data(varname_out, {'x': dat_mag.times, 'y': dict_mfa['mag_mfa']})
-    pytplot.store_data(f'{varname_mag_ambient}_ave', {'x': dat_mag.times, 'y': dict_mfa['mag_ave']})
+    if varname_mag_ambient is None:
+        pytplot.store_data(f'{varname_mag}_ave', {'x': dat_mag.times, 'y': dict_mfa['mag_ave']})
+    else:
+        pytplot.store_data(f'{varname_mag_ambient}_ave', {'x': dat_mag.times, 'y': dict_mfa['mag_ave']})
 
     return
 
 
-def gsm2rmlatmlt(
+def sm2rmlatmlt(
         varname,
         to='rmlatmlt',
         varname_out=None,
@@ -93,12 +102,12 @@ def gsm2rmlatmlt(
     data = dat.y
     data_converted = np.zeros_like(data)
     if to == 'gsm':
-        data_converted_x, data_converted_y, data_converted_z = _rmlatmlt2gsm(data[:, 0], data[:, 1], data[:, 2])
+        data_converted_x, data_converted_y, data_converted_z = _rmlatmlt2sm(data[:, 0], data[:, 1], data[:, 2])
         data_converted[:, 0] = data_converted_x
         data_converted[:, 1] = data_converted_y
         data_converted[:, 2] = data_converted_z
     elif to == 'rmlatmlt':
-        data_converted_x, data_converted_y, data_converted_z = _gsm2rmlatmlt(data[:, 0], data[:, 1], data[:, 2])
+        data_converted_x, data_converted_y, data_converted_z = _sm2rmlatmlt(data[:, 0], data[:, 1], data[:, 2])
         data_converted[:, 0] = data_converted_x
         data_converted[:, 1] = data_converted_y
         data_converted[:, 2] = data_converted_z
