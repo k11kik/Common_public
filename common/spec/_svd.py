@@ -138,13 +138,11 @@ def polarization_from_specmtx(
     """
     num_times, num_freqs, _, _ = spectral_matrices.shape
 
-    if not quiet:
-        display.current_time_comment('#', 'svd')
+    display.info('Performing SVD...')
     dict_svd_result = svd_mag(spectral_matrices, get_real_matrix=True)
     u_mtx, s_values, v_mtx, k_vec, real_mtx = dict_svd_result["u_matrices"], dict_svd_result["s_values"], dict_svd_result["v_matrices"], dict_svd_result["k_vec"], dict_svd_result["real_matrix"],
 
-    if not quiet:
-        display.current_time_comment('#', 'polarization')
+    display.info('Calculating polarization values...')
     # 波面法線角度（Wave Normal Angle）の計算
     k_xy = np.sqrt(k_vec[:, :, 0] ** 2 + k_vec[:, :, 1] ** 2)  # xy平面成分の大きさ
     k_z = k_vec[:, :, 2]
