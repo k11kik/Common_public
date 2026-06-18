@@ -81,7 +81,7 @@ def plot_orbit(
     ax2.set_xlim(y_min_plot, y_max_plot)
     ax2.set_ylim(z_min_plot, z_max_plot)
     ax2.axis('equal')
-    ax2.set_title('X-Y Plane')
+    ax2.set_title('Y-Z Plane')
     
     
     # Z-X plane
@@ -108,17 +108,18 @@ def plot_orbit(
     # plt.tight_layout()
 
     # 2つのサブプロットの間に少しスペースを空ける
-    plt.subplots_adjust(left=0.1, right=0.9, bottom=0.2, top=0.85, wspace=0.3)
+    plt.subplots_adjust(left=0.1, right=0.9, bottom=0.2, top=0.85, wspace=0.35)
     
     # カラーバー用の新しい軸をfigに追加
     # [left, bottom, width, height]
     # bottomを0.1にすることで、サブプロットと重ならないように下に配置
-    cbar_ax = fig.add_axes([0.2, 0.08, 0.6, 0.03])
+    # cbar_ax = fig.add_axes([0.2, 0.08, 0.6, 0.03])
+    cbar_ax = fig.add_axes([0.25, 0.07, 0.5, 0.025])
     
     # カラーバーを横向きに作成
     # scatter1をカラーマッピングの元として使用
     cbar = fig.colorbar(scatter1, cax=cbar_ax, orientation='horizontal')
-    cbar.set_label('Time (Normalized)', fontsize=12)
+    cbar.set_label('Time (Normalized)')
     
     path.savefig(savefig)
 
@@ -165,7 +166,7 @@ def plot_orbit_polar(
     # カラーバーをグラフ全体に追加
     cbar_ax = fig.add_axes((0.2, 0.1, 0.6, 0.02))  # [left, bottom, width, height]
     cbar = fig.colorbar(sc0, cax=cbar_ax, orientation="horizontal")
-    cbar.set_label('Time (Normalized)', fontsize=12)
+    cbar.set_label('Time (Normalized)')
     # cbar.set_ticks([0, .25, .5, .75, 1])
     # cbar.ax.set_xticklabels(["00", "30", "00", "30", "00"])
 
@@ -227,7 +228,7 @@ def plot_orbit_rmlatmlt(
     # カラーバーをグラフ全体に追加
     cbar_ax = fig.add_axes((0.2, 0.1, 0.6, 0.02))  # [left, bottom, width, height]
     cbar = fig.colorbar(sc0, cax=cbar_ax, orientation="horizontal")
-    cbar.set_label('Time (Normalized)', fontsize=12)
+    cbar.set_label('Time (Normalized)')
     # cbar.set_ticks([0, .25, .5, .75, 1])
     # cbar.ax.set_xticklabels(["00", "30", "00", "30", "00"])
 
@@ -290,7 +291,7 @@ def plot_orbit_rmlatmlt_itself(
     # カラーバーをグラフ全体に追加
     cbar_ax = fig.add_axes((0.2, 0.1, 0.6, 0.02))  # [left, bottom, width, height]
     cbar = fig.colorbar(sc0, cax=cbar_ax, orientation="horizontal")
-    cbar.set_label('Time (Normalized)', fontsize=12)
+    cbar.set_label('Time (Normalized)')
     # cbar.set_ticks([0, .25, .5, .75, 1])
     # cbar.ax.set_xticklabels(["00", "30", "00", "30", "00"])
 
