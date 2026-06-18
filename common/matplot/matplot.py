@@ -16,6 +16,11 @@ def clear_cache():
 def init():
     plt.rcParams['font.family'] = 'Roboto Condensed'
     plt.rcParams['font.size'] = 18
+    # legend
     plt.rcParams['legend.fontsize'] = 18
+    # suptitle
+    plt.rcParams['figure.titleweight'] = 'bold' # 'normal', 'bold', 'heavy', 'light'
+    plt.rcParams['figure.titlesize'] = 18
+    # x-axis
     plt.rcParams['xtick.labelsize'] = 18
     return
