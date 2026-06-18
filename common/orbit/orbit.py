@@ -10,7 +10,6 @@ def xyz2polar(
         to = 'polar', # 'xyz' or 'polar'
         info: bool = False,
 ):
-    
     # check if valid
     # ---------------
     list_to = ['xyz', 'polar']
