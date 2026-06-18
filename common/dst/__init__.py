@@ -1,1 +1,0 @@
-from .getdata_dst import getdata
