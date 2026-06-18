@@ -18,6 +18,7 @@ from . import (
     util,
     time,
     csv,
+    mag
 )
 
 from .const import const
