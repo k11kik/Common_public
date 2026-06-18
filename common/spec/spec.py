@@ -12,7 +12,10 @@ def spectrogram_vec(
         nyquist_freq=None,
         get_support=True
 ):
-    dict_support = {}
+    dict_support = {
+        'time_res [s]': window_second * (1 - rate_overlap),
+        'freq_res [Hz]': 1 / window_second
+    }
 
     # get data
     dat_mag_vec = pytplot.get_data(var_mag_vec)
@@ -45,6 +48,7 @@ def spectrogram_vec(
     psd_abs = np.sqrt(dict_spectrogram['spectrogram_psd_x'] ** 2 + dict_spectrogram['spectrogram_psd_y'] ** 2 + dict_spectrogram['spectrogram_psd_z'] ** 2)
 
     pytplot.store_data(f'{var_mag_vec}_psd_abs', {'x': dict_spectrogram['times'], 'y': psd_abs, 'v': dict_spectrogram['freqs']})
+
     return dict_support
 
 
@@ -145,6 +149,10 @@ def polarization_from_spectrogram(
         varname_out_wna='wna',
         varname_out_planarity='planarity',
 ):
+    dict_support = {
+        'mov_ave_time': mov_ave_time,
+        'mov_ave_freq': mov_ave_freq,
+    }
     # get data
     dat_var_spec_x = pytplot.get_data(var_spec_x)
     dat_var_spec_y = pytplot.get_data(var_spec_y)
@@ -164,4 +172,4 @@ def polarization_from_spectrogram(
     pytplot.store_data(varname_out_polari, {'x': dict_polari['times'], 'y': dict_polari['polarization'], 'v': dict_polari['freqs']})
     pytplot.store_data(varname_out_wna, {'x': dict_polari['times'], 'y': dict_polari['wna'], 'v': dict_polari['freqs']})
     pytplot.store_data(varname_out_planarity, {'x': dict_polari['times'], 'y': dict_polari['planarity'], 'v': dict_polari['freqs']})
-    return
+    return dict_support
