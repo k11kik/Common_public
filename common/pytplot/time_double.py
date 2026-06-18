@@ -52,7 +52,7 @@ def time_float(str_time=None):
             # datetime64 または Pandas DatetimeIndex の場合
             # tolist()でdatetime.datetimeオブジェクトのリストになるので、それを処理
             return [time_float_one(t) for t in str_time.tolist()]
-        elif str_time.dtype.kind in ('i', 'f'): # 整数または浮動小数点数のNumPy配列
+        elif str_time.dtype.kind in ('i', 'u', 'f'): # 整数または浮動小数点数のNumPy配列
             # この場合は直接floatに変換してリストに
             return str_time.astype(float).tolist()
         elif str_time.dtype == object: # object型配列の場合
