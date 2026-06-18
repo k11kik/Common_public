@@ -2185,7 +2185,7 @@ def tplot(
         height_ratios: list | None = None,
         ax_options: dict | None = None,
         str_label_orbit: str | None = None,
-        x_str_label_orbit = 0.8,
+        x_str_label_orbit = 0.7,
         top_adjustment_factor = 0.03,
         align_right_ymdstr: bool=True,
         panel_label=True
@@ -2195,7 +2195,7 @@ def tplot(
     -------
     * timeunit_xticks: 'seconds', 'minutes', 'hours', 'months', 'years'
     * list_label_orbit: ["R [Re]", "MLAT [deg]", "MLT [hr]", "TIME [HH:MM]"]
-    * x_str_label_orbit = 0.8: horizontal position of x-axis labels
+    * x_str_label_orbit = 0.7: horizontal position of x-axis labels
     """
     # Default setting
     # ----------------------------------------
