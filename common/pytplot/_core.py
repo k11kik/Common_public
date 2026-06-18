@@ -2,7 +2,7 @@ import numpy as np
 from datetime import datetime
 import copy
 from .time_double import time_double
-from common import display
+from common import display, mathpy
 
 # データストア (グローバルな辞書として定義)
 # key: tplot変数名 (str)
@@ -328,7 +328,7 @@ def tplot_names(quiet=False):
     if quiet:
         return var_names
     else:
-        title = '=' * 5 + 'tplot_names' + '=' * 5
+        title = '=' * 10 + ' tplot_names ' + '=' * 10
         print(title)
         for i, var_name in enumerate(var_names):
             dat_var = get_data(var_name)
@@ -454,18 +454,120 @@ def split(
 def exist_vars(vars_required):
     """
     指定されたすべての変数が存在するか確認します。
-    
+    共通化により、警告を抑制する silent モードを搭載。
+
     Args:
-        vars_required (list): 確認したいtplot変数のリスト
+        vars_required (str or list): 確認したいtplot変数名、またはそのリスト。
+        silent (bool): False の場合、存在しない変数名を自動的に警告ログ出力します。
+
     Returns:
-        bool: すべて存在すればTrue、一つでも欠けていればFalse
+        bool: すべて存在すれば True、一つでも欠けていれば False。
     """
     if not isinstance(vars_required, list):
         vars_required = [vars_required]
         
-    # すべての要素が _tplot_data_storage のキーに含まれているか判定
-    # set の包含関係を利用することで、要素数が多い場合も高速に動作します
-    return set(vars_required).issubset(_tplot_data_storage.keys())
+    present = set(vars_required).issubset(_tplot_data_storage.keys())
+    
+    if not present:
+        missing_vars = [v for v in vars_required if v not in _tplot_data_storage]
+        display.warning(f"Required variables not found in storage: {missing_vars}")
+        
+    return present
+
+
+
+def interp(parent_var: str, data_var: str, newname: str | None = None) -> str | None:
+    """
+    指定した2つのtplot変数において、parent_var の時間軸 (times) に合わせて 
+    data_var のデータ (y) を線形補間（リサンプリング）します。
+    
+    時間帯に全く重複（重なり）がない場合は警告を出し、安全に処理を中断します。
+
+    Parameters
+    ----------
+    parent_var : str
+        基準（補間先）となる時間軸を提供するtplot変数名 (例: 'mag')。
+    data_var : str
+        実際に補間（再サンプリング）されるデータを保持しているtplot変数名 (例: 'pos_rmlatmlt')。
+    new_name : str, optional
+        補間後の新規tplot変数名。
+        Noneの場合は自動的に '{data_var}_interpolated' となります。
+
+    Returns
+    -------
+    str or None
+        新規に生成・登録されたtplot変数名。全く重なりがなく失敗した場合は None。
+    """
+    # 1. 存在確認
+    if not exist_vars([parent_var, data_var]):
+        return None
+
+    # 2. データのロード
+    dat_parent = get_data(parent_var)
+    dat_data = get_data(data_var)
+    
+    times_parent = dat_parent.times
+    times_data = dat_data.times
+    values_data = dat_data.y
+
+    if len(times_parent) == 0 or len(times_data) == 0:
+        display.warning("One of the input variables has an empty time array.")
+        return None
+
+    # 3. 【重要】時間軸の完全重複チェック (Overlap Check)
+    # parentとdataの時間軸にお互いに重なる時間帯が全くない場合は補間不可
+    p_min, p_max = times_parent[0], times_parent[-1]
+    d_min, d_max = times_data[0], times_data[-1]
+
+    # 全く重複がない（親がデータより前にある、または親がデータより後ろにある）場合
+    if p_max < d_min or p_min > d_max:
+        display.warning(
+            f"Time ranges do not overlap at all.\n"
+            f"  Parent: [{datetime.fromtimestamp(p_min)} to {datetime.fromtimestamp(p_max)}]\n"
+            f"  Data  : [{datetime.fromtimestamp(d_min)} to {datetime.fromtimestamp(d_max)}]\n"
+            f"  -> Interpolation cancelled."
+        )
+        return None
+
+    # 4. 補間の実行
+    interpolated_y = mathpy.interp_vec(times_parent, times_data, values_data)
+
+    if interpolated_y is None:
+        display.warning("Interpolation failed during vector calculation.")
+        return None
+
+    # 5. 新しい変数名の決定
+    if newname is None:
+        newname = f"{data_var}_interp"
+
+    # 6. 新しい変数を登録
+    # 元の data_var のメタデータ (units等) を取得してそのまま引き渡す
+    metadata_orig = get_data(data_var, metadata=True)
+    
+    # 補間されたデータをストア
+    if data_var == newname:
+        replace = True
+    else:
+        replace = False
+    store_data(newname, {'x': times_parent, 'y': interpolated_y}, replace=replace, **metadata_orig)
+
+    # 7. プロットオプションの完全継承 (Deep Copy)
+    options_orig = get_data(data_var, get_options=True)
+    new_options = copy.deepcopy(options_orig)
+    
+    # オプション内の表示名称のみ新名称に変更
+    new_options['var'] = newname
+    
+    # # 補間後のラベル名を少し調整（凡例やY軸ラベルに"(interpolated)"などを適宜付与）
+    # if new_options.get('ylabel') is not None:
+    #     # すでに (interpolated) が付いていない場合のみ追記
+    #     if "(interpolated)" not in new_options['ylabel']:
+    #         new_options['ylabel'] = f"{new_options['ylabel']} (interpolated)"
+            
+    _tplot_data_storage[newname]['options'].update(new_options)
+
+    display.info(f"Interpolated: {newname} | '{data_var}' onto the timeline of '{parent_var}'")
+    return newname
 
 
 # def old_tplot_names():
