@@ -12,6 +12,7 @@ from ._core import (
     copy_data,
     split,
     exist_vars,
+    interp,
 )
 
 from .time_double import time_double
