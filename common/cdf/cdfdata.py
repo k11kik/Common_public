@@ -10,15 +10,231 @@ import numpy as np
 import os
 from datetime import datetime
 from scipy.fft import fft, ifft, fftfreq
-from cdflib import CDF
-import time
-import logging
 
-from common.base import display, path
-from common import util
+from common import display, path
 
 
+class CDFVar(np.ndarray):
+    """
+    既存の `dict_data['varname']` が直接 NumPy ndarray として振る舞いつつ、
+    `.unit` や `.desc` も保持するための、np.ndarrayを継承した特殊クラス。
+    """
+    def __new__(cls, input_array, unit=None, desc=None):
+        # 入力データをndarrayとしてビューキャスト
+        obj = np.asarray(input_array).view(cls)
+        # 新しい属性を割り当て
+        obj.unit = unit
+        obj.desc = desc
+        return obj
 
+    def __array_finalize__(self, obj):
+        if obj is None: return
+        self.unit = getattr(obj, 'unit', None)
+        self.desc = getattr(obj, 'desc', None)
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            if item == 'data':
+                return np.asarray(self)
+            elif item == 'unit':
+                return self.unit
+            elif item == 'desc':
+                return self.desc
+        # それ以外（NumPyスライシングや boolean インデックスなど）は通常の ndarray の処理に安全に委譲
+        return super().__getitem__(item)
+
+    def get(self, item, default=None):
+        """辞書エミュレーション用の get メソッド"""
+        if item == 'data': return np.asarray(self)
+        if item == 'unit': return self.unit
+        if item == 'desc': return self.desc
+        return default
+
+
+class CDFDict(dict):
+    """
+    旧仕様の辞書型（varname -> NumPy配列）を透過的に再現しつつ、
+    新仕様の構造化アクセスも可能にするカスタム辞書。
+    """
+    def __getitem__(self, key):
+        val = super().__getitem__(key)
+        # もし値がすでに CDFVar にラップされているならそのまま返す
+        return val
+
+
+def info(cdf_file_path, level='INFO'):
+    target_level = level.upper()
+    if display.LOG_LEVELS.get(target_level, 0) < display.CURRENT_LOG_LEVEL_THRESHOLD:
+        return
+
+    display.info(f'CDF filepath: {cdf_file_path}')
+    dict_var_names = {}
+    # 1回のオープンですべての情報を取得する
+    with pycdf.CDF(cdf_file_path) as cdf_data:
+        var_names = list(cdf_data.keys())
+        for var in var_names:
+            v_obj = cdf_data[var]
+            description_i = f'{v_obj.shape}'
+            
+            if 'UNITS' in v_obj.attrs:
+                description_i += f' [{v_obj.attrs["UNITS"]}]'
+            if 'CATDESC' in v_obj.attrs:
+                description_i += f' {v_obj.attrs["CATDESC"]}'
+            
+            dict_var_names[var] = description_i
+        
+    display.print_dict(dict_var_names, display_prefix=False)
+    print('-' * 50)
+    return dict_var_names
+
+
+def dict_to_cdf(
+        dict_data: dict,
+        cdf_obj
+):
+    """
+    開いているCDFオブジェクトに構造化データを書き込みます。
+    """
+    for key, value_item in dict_data.items():
+        if isinstance(value_item, CDFVar):
+            cdf_obj[key] = np.asarray(value_item)
+            if value_item.unit:
+                cdf_obj[key].attrs['UNITS'] = value_item.unit
+            if value_item.desc:
+                cdf_obj[key].attrs['CATDESC'] = value_item.desc
+        elif isinstance(value_item, dict) and 'data' in value_item:
+            cdf_obj[key] = value_item['data']
+            if value_item.get('unit'):
+                cdf_obj[key].attrs['UNITS'] = value_item['unit']
+            if value_item.get('desc'):
+                cdf_obj[key].attrs['CATDESC'] = value_item['desc']
+        else:
+            cdf_obj[key] = value_item
+    return cdf_obj
+
+
+def dict_to_cdffile(
+        dict_data: dict,
+        savecdf,
+        dict_description=None,
+        dict_units=None,
+        global_attrs=None,
+):
+    """
+    params
+    --------
+    dict_data: 'data', 'unit', 'desc'
+
+    構造化辞書・旧仕様平面辞書をシームレスに判別し、新しいCDFファイルを生成します。
+    
+    ※ 既存コードの dict_description, dict_units の個別引き渡しにも
+       完全に対応（上書きマージ）することで互換性を最大化しています。
+    """
+    path.make_directory(savecdf)
+    if os.path.exists(savecdf):
+        os.remove(savecdf)
+        
+    with pycdf.CDF(savecdf, '') as cdf_file:
+        # グローバル属性の設定
+        if global_attrs is not None:
+            if isinstance(global_attrs, str):
+                cdf_file.attrs['TITLE'] = global_attrs
+                cdf_file.attrs['TEXT'] = global_attrs
+            elif isinstance(global_attrs, dict):
+                for attr_key, attr_val in global_attrs.items():
+                    cdf_file.attrs[attr_key] = attr_val
+
+        # 各変数データの書き込み
+        for key, value_item in dict_data.items():
+            try:
+                # データの型による属性の振り分け
+                if isinstance(value_item, CDFVar):
+                    data_val = np.asarray(value_item)
+                    unit_val = value_item.unit
+                    desc_val = value_item.desc
+                elif isinstance(value_item, dict) and 'data' in value_item:
+                    data_val = value_item['data']
+                    unit_val = value_item.get('unit')
+                    desc_val = value_item.get('desc')
+                else:
+                    # 完全な平面データ（旧仕様互換）
+                    data_val = value_item
+                    unit_val = None
+                    desc_val = None
+
+                # 外部定義引数の優先・フォールバック上書き
+                if dict_description and key in dict_description:
+                    desc_val = dict_description[key]
+                if dict_units and key in dict_units:
+                    unit_val = dict_units[key]
+
+                if not isinstance(data_val, (list, np.ndarray)):
+                    data_val = [data_val]
+                
+                cdf_file[key] = data_val
+                
+                # 属性の書き込み
+                if desc_val is not None:
+                    cdf_file[key].attrs["CATDESC"] = str(desc_val)
+                    cdf_file[key].attrs["description"] = str(desc_val)
+                if unit_val is not None:
+                    cdf_file[key].attrs["UNITS"] = str(unit_val)
+                    cdf_file[key].attrs["units"] = str(unit_val)
+
+            except Exception as e:
+                display.error(f'Error in processing {key=}: {e}')
+                
+    display.info(f'Saved: {savecdf}')
+    return
+
+
+def cdffile_to_dict(cdf_filepath):
+    """
+    CDFファイルを読み込み、互換形式を兼ね備えた CDFDict を返します。
+
+    これによって、既存の以下のコード：
+    >>> dict_data = cdffile_to_dict(filepath)
+    >>> b_array = dict_data['mag']  # 直接NumPy配列のように扱える
+    
+    および、新機能の：
+    >>> b_unit = dict_data['mag'].unit  # 単位もシームレスに取り出せる
+    >>> b_array_explicit = dict_data['mag']['data']  # 入れ子アクセスも可能
+    
+    がすべて同じコードの変更なしで同時に動作します。
+    """
+    dict_data = CDFDict()
+    if not os.path.exists(cdf_filepath):
+        display.warning(f'Not found: {cdf_filepath}')
+        return None
+        
+    with pycdf.CDF(cdf_filepath) as cdf_file:
+        var_names = list(cdf_file.keys())
+        for var in var_names:
+            try:
+                v_obj = cdf_file[var]
+                data_val = v_obj[...]
+                
+                # 単位および説明の抽出
+                unit_val = None
+                if 'UNITS' in v_obj.attrs:
+                    unit_val = str(v_obj.attrs['UNITS'])
+                elif 'units' in v_obj.attrs:
+                    unit_val = str(v_obj.attrs['units'])
+                    
+                desc_val = None
+                if 'CATDESC' in v_obj.attrs:
+                    desc_val = str(v_obj.attrs['CATDESC'])
+                elif 'description' in v_obj.attrs:
+                    desc_val = str(v_obj.attrs['description'])
+                
+                # 特殊な多機能クラスでラップして格納
+                dict_data[var] = CDFVar(data_val, unit=unit_val, desc=desc_val)
+            except Exception as e:
+                display.error(f'Error in processing {var}: {e}')
+    return dict_data
+
+
+# -------------------------------------------
 def get(cdf_file_path, display_cdf=False):
     """
     read cdf data
@@ -37,38 +253,7 @@ def variable_list(cdf_file_path):
     with pycdf.CDF(cdf_file_path) as cdf_data:
         return list(cdf_data.keys())
 
-def _variable_list(cdf_file_path):# 20260506
-    """
-    get variables
-    :param cdf_file_path:
-    :return:
-    """
-    cdf_data = get(cdf_file_path)
-    var_names = list(cdf_data.keys())
-    return var_names
 
-
-def info(cdf_file_path):
-    print("----- cdf info -----")
-    print(f"cdf file path: {cdf_file_path}")
-    
-    dict_var_names = {}
-    # 1回のオープンですべての情報を取得する
-    with pycdf.CDF(cdf_file_path) as cdf_data:
-        var_names = list(cdf_data.keys())
-        for var in var_names:
-            v_obj = cdf_data[var]
-            description_i = f'{v_obj.shape}'
-            
-            if 'UNITS' in v_obj.attrs:
-                description_i += f' [{v_obj.attrs["UNITS"]}]'
-            if 'CATDESC' in v_obj.attrs:
-                description_i += f' {v_obj.attrs["CATDESC"]}'
-            
-            dict_var_names[var] = description_i
-        
-    display.print_dict(dict_var_names, prefix='CDF variables', only_prefix=True)
-    return dict_var_names
 
 
 def _info(cdf_file_path):# 20260506
@@ -597,7 +782,7 @@ def read_and_combine_cdf_files(
                         combined_data[var] = np.concatenate(combined_data[var])
                         vars.remove(var)
                     else:
-                        display.error('cdfdata/read_and_combine', f'var {var} is not available: {vars_available=}')
+                        display.error(f'var {var} is not available: {vars_available=}')
 
             # 変数ごとに結合処理
             for var in vars:
@@ -605,7 +790,7 @@ def read_and_combine_cdf_files(
                     # combined_data[var].append(cdf.varget(var))
                     combined_data[var].append(cdf[var][:])
                 else:
-                    display.error('cdfdata/read_and_combine', f'var {var} is not available: {vars_available=}')
+                    display.error(f'var {var} is not available: {vars_available=}')
 
     for var in vars:
         combined_data[var] = np.concatenate(combined_data[var])
@@ -641,90 +826,90 @@ def save_data_as_cdf(
     return
 
 
-def dict_to_cdf(
-        dict_data: dict,
-        cdf
-):
-    for key, value in dict_data.items():
-        cdf[key] = value
-    return cdf
+# def dict_to_cdf(# 20260613
+#         dict_data: dict,
+#         cdf
+# ):
+#     for key, value in dict_data.items():
+#         cdf[key] = value
+#     return cdf
 
 
-def dict_to_cdffile(
-        dict_data: dict,
-        savecdf,
-        dict_description = None,
-        dict_units = None,
-        global_attrs=None,
-):
-    """
-    dict -> cdf file
+# def dict_to_cdffile(# 20260613
+#         dict_data: dict,
+#         savecdf,
+#         dict_description = None,
+#         dict_units = None,
+#         global_attrs=None,
+# ):
+#     """
+#     dict -> cdf file
 
-    Parameters
-    ----------
-    dict_data : dict
-        書き出すデータの辞書。
-    savecdf : str
-        保存先のCDFファイルパス。
-    dict_description : dict, optional
-        変数ごとの説明（CATDESC）の辞書。
-    dict_units : dict, optional
-        変数ごとの単位（UNITS）の辞書。
-    global_attrs : dict or str, optional
-        ファイル全体の属性（グローバル属性）。
-        文字列が渡された場合は、自動的に標準的な {'TITLE': global_attrs} 構造に変換されます。
-    """
-    path.make_directory(savecdf)
-    if os.path.exists(savecdf):
-        os.remove(savecdf)
-    with pycdf.CDF(savecdf, '') as cdf:
-        if global_attrs is not None:
-            if isinstance(global_attrs, str):
-                # 単一の文字列が渡された場合、標準的なタイトルとして割り当てる
-                cdf.attrs['TITLE'] = global_attrs
-                cdf.attrs['TEXT'] = global_attrs
-            elif isinstance(global_attrs, dict):
-                # 辞書が渡された場合は、すべてのキー・値をグローバル属性としてそのまま追加
-                for attr_key, attr_val in global_attrs.items():
-                    cdf.attrs[attr_key] = attr_val
+#     Parameters
+#     ----------
+#     dict_data : dict
+#         書き出すデータの辞書。
+#     savecdf : str
+#         保存先のCDFファイルパス。
+#     dict_description : dict, optional
+#         変数ごとの説明（CATDESC）の辞書。
+#     dict_units : dict, optional
+#         変数ごとの単位（UNITS）の辞書。
+#     global_attrs : dict or str, optional
+#         ファイル全体の属性（グローバル属性）。
+#         文字列が渡された場合は、自動的に標準的な {'TITLE': global_attrs} 構造に変換されます。
+#     """
+#     path.make_directory(savecdf)
+#     if os.path.exists(savecdf):
+#         os.remove(savecdf)
+#     with pycdf.CDF(savecdf, '') as cdf:
+#         if global_attrs is not None:
+#             if isinstance(global_attrs, str):
+#                 # 単一の文字列が渡された場合、標準的なタイトルとして割り当てる
+#                 cdf.attrs['TITLE'] = global_attrs
+#                 cdf.attrs['TEXT'] = global_attrs
+#             elif isinstance(global_attrs, dict):
+#                 # 辞書が渡された場合は、すべてのキー・値をグローバル属性としてそのまま追加
+#                 for attr_key, attr_val in global_attrs.items():
+#                     cdf.attrs[attr_key] = attr_val
 
-        for key, value in dict_data.items():
-            try:
-                if not isinstance(value, (list, np.ndarray)):
-                    value = [value]
-                cdf[key] = value
-                # description
-                if dict_description and key in dict_description:
-                    cdf[key].attrs["CATDESC"] = dict_description[key] # category description
-                # unit
-                if dict_units and key in dict_units:
-                    cdf[key].attrs["UNITS"] = dict_units[key] # unit
+#         for key, value in dict_data.items():
+#             try:
+#                 if not isinstance(value, (list, np.ndarray)):
+#                     value = [value]
+#                 cdf[key] = value
+#                 # description
+#                 if dict_description and key in dict_description:
+#                     cdf[key].attrs["CATDESC"] = dict_description[key] # category description
+#                 # unit
+#                 if dict_units and key in dict_units:
+#                     cdf[key].attrs["UNITS"] = dict_units[key] # unit
 
-            except Exception as e:
-                display.error(f'Error in processing {key=}: {e}')
-    display.info(f'Saved: {savecdf}')
-    return
+#             except Exception as e:
+#                 display.error(f'Error in processing {key=}: {e}')
+#     display.info(f'Saved: {savecdf}')
+#     return
 
 
-def cdffile_to_dict(cdf_filepath):
-    """
-    cdf file -> dict
+# def cdffile_to_dict(cdf_filepath):# 20260613
+#     """
+#     cdf file -> dict
 
-    Not existing cdf_filepath => return None
-    """
-    dict_data = {}
-    if not os.path.exists(cdf_filepath):
-        display.warning(f'Not found: {cdf_filepath}')
-        return
-    with pycdf.CDF(cdf_filepath) as cdf:
-        var_names = list(cdf.keys())
-        for var in var_names:
-            try:
-                # 既に開いている cdf オブジェクトからデータを取得
-                dict_data[var] = cdf[var][...]
-            except Exception as e:
-                display.error(f'Error in processing {var}: {e}')
-    return dict_data
+#     Not existing cdf_filepath => return None
+#     """
+#     dict_data = {}
+#     if not os.path.exists(cdf_filepath):
+#         display.warning(f'Not found: {cdf_filepath}')
+#         return
+#     with pycdf.CDF(cdf_filepath) as cdf:
+#         var_names = list(cdf.keys())
+#         for var in var_names:
+#             try:
+#                 # 既に開いている cdf オブジェクトからデータを取得
+#                 dict_data[var] = cdf[var][...]
+#             except Exception as e:
+#                 display.error(f'Error in processing {var}: {e}')
+#     return dict_data
 
 
 def _cdffile_to_dict(# 20260506
