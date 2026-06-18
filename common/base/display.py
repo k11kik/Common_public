@@ -106,7 +106,7 @@ def progress_bar(iteration, total, start_time, bar_length=40, color='white', upd
     * total: Total number of iterations (int)
     * start_time: Start time just before the loop (float, obtained from datetime.now())
     * bar_length: Length of the progress bar (default: 40)
-
+    * update=True: True => update progress bar
         
     Return
     --------
@@ -307,7 +307,9 @@ def print_dict(
         dict_data,
         prefix='Dict',
         level='INFO',
+        display_log_level=True,
         only_prefix=False,
+        display_prefix=True
 ):
     target_level = level.upper()
     if LOG_LEVELS.get(target_level, 0) < CURRENT_LOG_LEVEL_THRESHOLD:
@@ -316,20 +318,32 @@ def print_dict(
     if not isinstance(dict_data, dict):
         raise ValueError('dict_data is not dict type')
     
-    color = 'green' if target_level == 'DEBUG' else 'white' if target_level == 'INFO' else 'yellow'
+    if display_prefix:
+        color = 'green' if target_level == 'DEBUG' else 'white' if target_level == 'INFO' else 'yellow'
+        
+        function_name = get_caller_name()
+        time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if display_log_level:
+            plain_text = f"{target_level} {time_str} [{function_name}] {prefix}"
+            if only_prefix:
+                start_comment = color_letters(plain_text, color=color)
+            else:
+                start_comment = f'----- {color_letters(f'{target_level} {time_str}', color=color)} [{function_name}] {prefix} -----'
+        else:
+            plain_text = f'{prefix}'
+            if only_prefix:
+                start_comment = plain_text
+            else:
+                start_comment = f'----- {prefix} -----'
+        
+        content_len = len(plain_text) + 12
+        print(start_comment)
+        for i, (key, value) in enumerate(dict_data.items()):
+            print(f'{i} {key}: {value}')
+        end_comment = '-' * content_len
+        print(end_comment)
     
-    function_name = get_caller_name()
-    time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    if only_prefix:
-        start_comment = f'----- {prefix} -----'
-        plain_text = f'{prefix}'
     else:
-        start_comment = f'----- {color_letters(f'{target_level} {time_str}', color=color)} [{function_name}] {prefix} -----'
-        plain_text = f"{target_level} {time_str} [{function_name}] {prefix}"
-    content_len = len(plain_text) + 12
-    print(start_comment)
-    for i, (key, value) in enumerate(dict_data.items()):
-        print(f'{i} {key}: {value}')
-    end_comment = '-' * content_len
-    print(end_comment)
+        for i, (key, value) in enumerate(dict_data.items()):
+            print(f'{i} {key}: {value}')
     return
