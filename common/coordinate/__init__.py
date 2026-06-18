@@ -1,6 +1,6 @@
 from .coordinate import (
     to_mfa,
-    gsm2rmlatmlt,
+    sm2rmlatmlt,
     to_mbe
 )
 
